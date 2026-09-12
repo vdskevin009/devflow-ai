@@ -1,0 +1,29 @@
+@inject BrowserStore Store
+<div class="notice"><span class="badge">FREE TEMPLATE PLANNER</span> This MVP uses deterministic templates, with no AI API calls or fees. Drafts stay in this browser until you choose to share them.</div>
+@if(error!="") { <p role="alert" class="error">@error</p> }
+@if(message!="") { <p role="status" class="success">@message</p> }
+<section class="stats"><div class="stat"><small>YOUR PROCESS</small><strong>01 → 03</strong><small>Describe · Refine · Build</small></div><div class="stat"><small>SAVED DRAFTS</small><strong>@history.Count</strong><small>Available on this device</small></div><div class="stat"><small>PROVIDER</small><strong>Local</strong><small>No account or API key required</small></div></section>
+<div class="grid"><div><section class="card"><h2>01 / Describe the feature</h2><form @onsubmit="Generate" @onsubmit:preventDefault><div class="form-grid">
+<label class="full">Feature title<input @bind="title" maxlength="120" required placeholder="Add export to CSV"/></label>
+<label class="full">What should it do?<textarea @bind="description" maxlength="2000" required placeholder="Users should be able to export their filtered task list to CSV, including titles, due dates and owners."></textarea></label>
+<label class="full">Who is it for?<input @bind="audience" maxlength="200" placeholder="a family organizer" required/></label>
+<label class="full">Constraints<textarea @bind="constraints" maxlength="1000" placeholder="Keep it free, mobile-friendly and compatible with existing data."></textarea></label>
+<button type="submit">Create requirements →</button></div></form></section>
+<section class="card tinted"><h2>Recent drafts</h2>@if(history.Count==0) { <p class="muted">Your saved requirements will appear here.</p> }@foreach(var draft in history) { <div class="row"><span class="grow">@draft.Title</span><button class="secondary" @onclick="()=>Load(draft)">Open</button><button class="danger" aria-label="@($"Delete draft {draft.Title}")" @onclick="()=>Delete(draft)">×</button></div> }</section></div>
+<div><section class="card"><div class="card-head"><h2>02 / Refine the draft</h2><span class="badge">REVIEW REQUIRED</span></div>@if(markdown=="") { <p class="empty">Start with an idea. Your editable implementation brief will appear here.</p> } else { <label>Issue title<input @bind="planTitle" maxlength="120" /></label><label style="margin-top:14px">Requirements (Markdown)<textarea style="min-height:460px;font-family:ui-monospace,Consolas,monospace;font-size:12px" @bind="markdown" maxlength="20000"></textarea></label><div class="actions" style="margin-top:16px"><button @onclick="SaveDraft">Save draft</button><button class="secondary" @onclick="Download">Download Markdown</button></div> }</section>
+<section class="card"><h2>03 / Move it to GitHub</h2><label>Destination repository<input @bind="repository" placeholder="owner/repository" /></label><p class="notice">Opening the draft sends its title and text to GitHub in a URL. Review the destination and remove private details first. You submit the issue yourself on GitHub.</p>
+<button disabled="@(markdown=="")" @onclick="Prepare">Prepare GitHub draft</button>
+@if(issueUrl is not null) { <p><a class="button secondary" href="@issueUrl" target="_blank" rel="noopener noreferrer">Review on GitHub ↗</a></p><p class="notice">This link contains the version prepared above. Prepare again after editing. If the browser rejects a long URL, download the Markdown and paste it into a new GitHub issue.</p> }
+<details><summary>Where AI fits next</summary>Replace the requirements provider with a server-side AI adapter. Add GitHub App OAuth before publishing issues automatically. PR reviews, test generation and release notes belong behind authenticated server endpoints; never embed credentials in this static app.</details></section></div></div>
+@code {
+string title="",description="",audience="a user",constraints="No paid infrastructure. Preserve existing behavior and support phones.",planTitle="",markdown="",repository="vdskevin009/devflow-ai",error="",message=""; Uri? issueUrl;
+List<FeaturePlan> history=[];
+protected override async Task OnInitializedAsync(){try{history=await Store.Load<List<FeaturePlan>>("devflow.v1")??[];}catch{error="Could not load saved drafts.";}}
+void Generate(){try{var plan=new TemplateRequirementsGenerator().Generate(new(title,description,audience,constraints));Load(plan);error="";}catch(Exception ex){error=ex.Message;}}
+void Load(FeaturePlan plan){planTitle=plan.Title;markdown=plan.Markdown;issueUrl=null;message="";}
+async Task SaveHistory(){try{await Store.Save("devflow.v1",history);error="";}catch{error="Could not save to browser storage. Download the draft before leaving.";}}
+async Task SaveDraft(){if(string.IsNullOrWhiteSpace(planTitle)||string.IsNullOrWhiteSpace(markdown)){error="Enter a title and requirements first.";return;}history.RemoveAll(x=>x.Title==planTitle);history.Insert(0,new(planTitle,markdown));history=history.Take(30).ToList();await SaveHistory();message=error==""?"Draft saved on this device.":"";}
+async Task Delete(FeaturePlan plan){history.Remove(plan);await SaveHistory();}
+Task Download()=>Store.Download("requirements.md",$"# {planTitle}\n\n{markdown}","text/markdown");
+void Prepare(){try{issueUrl=GitHubDraft.Url(repository.Trim(),new(planTitle,markdown));error="";}catch(Exception ex){error=ex.Message;issueUrl=null;}}
+}
